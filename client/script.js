@@ -1,4 +1,4 @@
-import { getItems } from "./api";
+import { getItems, purchaseItem } from "./api";
 
 const itemTemplate = document.getElementById("item-template");
 const itemList = document.querySelector("[data-item-list]");
@@ -21,6 +21,9 @@ async function loadItems() {
     } else {
       button.classList.add("purchase-btn");
       button.textContent = "Purchase";
+      button.addEventListener("click", () => {
+        purchaseItem(item.id);
+      });
     }
 
     itemList.append(itemElement);

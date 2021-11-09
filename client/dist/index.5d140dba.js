@@ -476,6 +476,9 @@ async function loadItems() {
         } else {
             button.classList.add("purchase-btn");
             button.textContent = "Purchase";
+            button.addEventListener("click", ()=>{
+                _api.purchaseItem(item.id);
+            });
         }
         itemList.append(itemElement);
     });
@@ -487,14 +490,31 @@ var parcelHelpers = require("@parcel/transformer-js/src/esmodule-helpers.js");
 parcelHelpers.defineInteropFlag(exports);
 parcelHelpers.export(exports, "getItems", ()=>getItems
 );
+parcelHelpers.export(exports, "purchaseItem", ()=>purchaseItem
+);
 var _axios = require("axios");
 var _axiosDefault = parcelHelpers.interopDefault(_axios);
 const apiInstance = _axiosDefault.default.create({
     baseURL: "http://localhost:3000"
 });
+const stripe = Stripe("pk_test_51JtzTbA2EnQADlgNGmMtnEBS4LieyjoOX0FHhH3WfE5CZc8Kg5hKilUPNqlQuTIrzbayq2kVYpgTWdHntLhiRSB600UZIy2Y6i");
 async function getItems() {
     const res = await apiInstance.get("/items");
     return res.data;
+}
+function purchaseItem(itemId) {
+    return apiInstance.post("/create-checkout-session", {
+        itemId
+    }).then((res)=>{
+        return stripe.redirectToCheckout({
+            sessionId: res.data.id
+        });
+    }).then(function(result) {
+        if (result.error) alert(result.error.message);
+    }).catch(function(error) {
+        console.error("Error:", error);
+        alert(error);
+    });
 }
 
 },{"axios":"1IeuP","@parcel/transformer-js/src/esmodule-helpers.js":"ciiiV"}],"1IeuP":[function(require,module,exports) {
