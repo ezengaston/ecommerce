@@ -6,11 +6,21 @@ const items = require("./items.json");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(
   cors({
     origin: process.env.CLIENT_URL,
   })
 );
+
+app.get("/purchase-success", async (req, res) => {
+  const item = items.find((i) => i.id === parseInt(req.query.itemId));
+  const {
+    customer_details: { email },
+  } = await stripe.checkout.sessions.retrieve(req.query.sessionId);
+
+  res.redirect(`${process.env.CLIENT_URL}/download-links.html`);
+});
 
 app.get("/items", (req, res) => {
   res.json(
@@ -50,7 +60,7 @@ function createCheckoutSession(item) {
       },
     ],
     mode: "payment",
-    success_url: `${process.env.CLIENT_URL}/download-links.html`,
+    success_url: `${process.env.SERVER_URL}/purchase-success?itemId=${item.id}&sessionId={CHECKOUT_SESSION_ID}`,
     cancel_url: process.env.CLIENT_URL,
   });
 }
