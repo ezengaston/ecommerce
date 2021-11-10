@@ -4,6 +4,10 @@ const app = express();
 const cors = require("cors");
 const items = require("./items.json");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+const { v4: uuidv4 } = require("uuid");
+
+const downloadLinkMap = new Map();
+const DOWNLOAD_LINK_EXPIRATION = 10 * 60 * 1000;
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -13,11 +17,29 @@ app.use(
   })
 );
 
+app.get("/download/:code", (req, res) => {
+  const itemId = downloadLinkMap.get(req.params.code);
+  if (itemId == null) {
+    return res.send("This link has either expired or is invalid");
+  }
+
+  const item = items.find((i) => i.id === itemId);
+  if (item == null) {
+    return res.send("This item could not be found");
+  }
+
+  downloadLinkMap.delete(req.params.code);
+  res.download(`downloads/${item.file}`);
+});
+
 app.get("/purchase-success", async (req, res) => {
   const item = items.find((i) => i.id === parseInt(req.query.itemId));
   const {
     customer_details: { email },
   } = await stripe.checkout.sessions.retrieve(req.query.sessionId);
+
+  const downloadLinkCode = createDownloadCode(item.id);
+  sendDownloadLink(email, downloadLinkCode, item);
 
   res.redirect(`${process.env.CLIENT_URL}/download-links.html`);
 });
@@ -63,6 +85,15 @@ function createCheckoutSession(item) {
     success_url: `${process.env.SERVER_URL}/purchase-success?itemId=${item.id}&sessionId={CHECKOUT_SESSION_ID}`,
     cancel_url: process.env.CLIENT_URL,
   });
+}
+
+function createDownloadCode(itemId) {
+  const downloadUuid = uuidv4();
+  downloadLinkMap.set(downloadUuid, itemId);
+  setTimeout(() => {
+    downloadLinkMap.delete(downloadUuid);
+  }, DOWNLOAD_LINK_EXPIRATION);
+  return downloadUuid;
 }
 
 app.listen(3000);
