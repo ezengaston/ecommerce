@@ -5,6 +5,7 @@ const cors = require("cors");
 const items = require("./items.json");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const { v4: uuidv4 } = require("uuid");
+const { sendDownloadLink } = require("./mailer");
 
 const downloadLinkMap = new Map();
 const DOWNLOAD_LINK_EXPIRATION = 10 * 60 * 1000;
