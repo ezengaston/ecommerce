@@ -1,22 +1,84 @@
 require("dotenv").config();
 const express = require("express");
+const cookieParser = require("cookie-parser");
 const app = express();
 const cors = require("cors");
 const items = require("./items.json");
-const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
-const { v4: uuidv4 } = require("uuid");
-const { sendDownloadLink } = require("./mailer");
+const stripe = require("stripe")(process.env.STRIPE_PRIVATE_KEY);
+const { v4: uuidV4 } = require("uuid");
+const { sendDownloadLink, sendAllDownloadLinks } = require("./mailer");
+const { linkContactAndItem, getContactPurchasedItems } = require("./contacts");
 
 const downloadLinkMap = new Map();
-const DOWNLOAD_LINK_EXPIRATION = 10 * 60 * 1000;
+const DOWNLOAD_LINK_EXPIRATION = 10 * 60 * 1000; // 10 Minutes
+const COOKIE_EXPIRATION = 30 * 24 * 60 * 60 * 1000; // 30 Days
 
+app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(
   cors({
+    credentials: true,
     origin: process.env.CLIENT_URL,
   })
 );
+
+app.get("/items", async (req, res) => {
+  const email = req.cookies.email;
+  const purchasedItemIds = (await getContactPurchasedItems(email)).map(
+    (item) => item.id
+  );
+  res.json(
+    items.map((item) => {
+      return {
+        id: item.id,
+        name: item.name,
+        price: item.priceInCents / 100,
+        purchased: purchasedItemIds.includes(item.id),
+      };
+    })
+  );
+});
+
+app.post("/download-email", (req, res) => {
+  const email = req.cookies.email;
+  const itemId = req.body.itemId;
+  const code = createDownloadCode(itemId);
+  sendDownloadLink(
+    email,
+    code,
+    items.find((i) => i.id === parseInt(itemId))
+  )
+    .then(() => {
+      res.json({ message: "Check your email" });
+    })
+    .catch(() => {
+      res.status(500).json({ message: "Error: Please try again" });
+    });
+});
+
+app.post("/download-all", async (req, res) => {
+  const email = req.body.email;
+  const items = await getContactPurchasedItems(email);
+  setEmailCookie(res, email);
+  sendAllDownloadLinks(
+    email,
+    items.map((item) => {
+      return { item, code: createDownloadCode(item.id) };
+    })
+  );
+
+  return res.json({ message: "Check your email for a download link" });
+});
+
+app.post("/create-checkout-session", async (req, res) => {
+  const item = items.find((i) => i.id === parseInt(req.body.itemId));
+  if (item == null) {
+    return res.status(400).json({ message: "Invalid Item" });
+  }
+  const session = await createCheckoutSession(item);
+  res.json({ id: session.id });
+});
 
 app.get("/download/:code", (req, res) => {
   const itemId = downloadLinkMap.get(req.params.code);
@@ -39,33 +101,21 @@ app.get("/purchase-success", async (req, res) => {
     customer_details: { email },
   } = await stripe.checkout.sessions.retrieve(req.query.sessionId);
 
+  setEmailCookie(res, email);
+  linkContactAndItem(email, item);
   const downloadLinkCode = createDownloadCode(item.id);
   sendDownloadLink(email, downloadLinkCode, item);
-
   res.redirect(`${process.env.CLIENT_URL}/download-links.html`);
 });
 
-app.get("/items", (req, res) => {
-  res.json(
-    items.map((item) => {
-      return {
-        id: item.id,
-        name: item.name,
-        price: item.priceInCents / 100,
-        purchased: false,
-      };
-    })
-  );
-});
-
-app.post("/create-checkout-session", async (req, res) => {
-  const item = items.find((i) => i.id === parseInt(req.body.itemId));
-  if (item == null) {
-    return res.status(400).json({ message: "Invalid Item" });
-  }
-  const session = await createCheckoutSession(item);
-  res.json({ id: session.id });
-});
+function setEmailCookie(res, email) {
+  res.cookie("email", email, {
+    httpOnly: true,
+    secure: true,
+    maxAge: COOKIE_EXPIRATION,
+    sameSite: "None",
+  });
+}
 
 function createCheckoutSession(item) {
   return stripe.checkout.sessions.create({
@@ -89,7 +139,7 @@ function createCheckoutSession(item) {
 }
 
 function createDownloadCode(itemId) {
-  const downloadUuid = uuidv4();
+  const downloadUuid = uuidV4();
   downloadLinkMap.set(downloadUuid, itemId);
   setTimeout(() => {
     downloadLinkMap.delete(downloadUuid);

@@ -2,12 +2,27 @@ import axios from "axios";
 
 const apiInstance = axios.create({
   baseURL: process.env.SERVER_URL,
+  withCredentials: true,
 });
 const stripe = Stripe(process.env.STRIPE_PUBLIC_KEY);
+
+export async function downloadAll(email) {
+  return apiInstance
+    .post("/download-all", { email })
+    .then((res) => alert(res.data.message))
+    .catch((res) => alert(res.data.message));
+}
 
 export async function getItems() {
   const res = await apiInstance.get("/items");
   return res.data;
+}
+
+export function downloadItem(itemId) {
+  return apiInstance
+    .post("/download-email", { itemId })
+    .then((res) => alert(res.data.message))
+    .catch((res) => alert(res.data.message));
 }
 
 export function purchaseItem(itemId) {
